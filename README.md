@@ -8,6 +8,7 @@ Backend em FastAPI para consulta de transações imobiliárias de São Paulo.
 - **PostgreSQL**: Banco de dados (hospedado no Aiven)
 - **Uvicorn**: Servidor ASGI
 - **psycopg2**: Driver PostgreSQL
+- **Python**: 3.11 (recomendado para compatibilidade)
 
 ## Estrutura do Projeto
 
@@ -15,11 +16,14 @@ Backend em FastAPI para consulta de transações imobiliárias de São Paulo.
 transacoes-backend/
 ├── app/
 │   ├── __init__.py
-│   └── main.py          # Aplicação FastAPI principal
-├── requirements.txt     # Dependências Python
-├── .env.example        # Exemplo de variáveis de ambiente
-├── .gitignore          # Arquivos ignorados pelo Git
-└── README.md           # Este arquivo
+│   └── main.py              # Aplicação FastAPI principal
+├── requirements.txt         # Dependências Python
+├── .python-version          # Versão do Python (3.11)
+├── .env.example            # Exemplo de variáveis de ambiente
+├── .gitignore              # Arquivos ignorados pelo Git
+├── README.md               # Este arquivo
+├── render.yaml             # Configuração automática do Render
+└── test_api.py             # Script de testes locais
 ```
 
 ## Instalação Local
@@ -30,9 +34,9 @@ git clone <seu-repositorio>
 cd transacoes-backend
 ```
 
-2. Crie um ambiente virtual:
+2. Crie um ambiente virtual com Python 3.11:
 ```bash
-python -m venv venv
+python3.11 -m venv venv
 source venv/bin/activate  # Linux/Mac
 # ou
 venv\Scripts\activate  # Windows
@@ -112,6 +116,8 @@ Health check do serviço
 
 ## Deploy no Render
 
+### Opção 1: Via Interface Web (Recomendado)
+
 1. Crie uma conta no [Render](https://render.com)
 
 2. Crie um novo **Web Service**
@@ -120,6 +126,7 @@ Health check do serviço
 
 4. Configure o serviço:
    - **Environment**: Python 3
+   - **Python Version**: 3.11 (especificado no `.python-version`)
    - **Build Command**: `pip install -r requirements.txt`
    - **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 
@@ -131,6 +138,18 @@ Health check do serviço
 
 7. Aguarde o deploy e anote a URL gerada (ex: `https://seu-app.onrender.com`)
 
+### Opção 2: Via render.yaml
+
+O arquivo `render.yaml` está configurado para deploy automático. Basta conectar o repositório e o Render usará as configurações do arquivo.
+
+## Versão do Python
+
+**Importante**: Este projeto requer Python 3.11 devido à compatibilidade com `psycopg2-binary`.
+
+O arquivo `.python-version` especifica a versão 3.11.0, que o Render usará automaticamente.
+
+Se você encontrar erros relacionados a `_PyInterpreterState_Get`, confirme que está usando Python 3.11 e não 3.13.
+
 ## Variáveis de Ambiente
 
 - `DATABASE_URL`: String de conexão PostgreSQL completa
@@ -138,6 +157,22 @@ Health check do serviço
 ## Desenvolvimento
 
 Para adicionar novos endpoints, edite o arquivo `app/main.py`.
+
+## Troubleshooting
+
+### Erro: ImportError com psycopg2
+
+Se aparecer erro `undefined symbol: _PyInterpreterState_Get`:
+
+1. Verifique se está usando Python 3.11 (não 3.13)
+2. Confirme que o arquivo `.python-version` existe
+3. No Render, force rebuild do serviço
+
+### Erro de conexão com banco de dados
+
+1. Verifique se a variável `DATABASE_URL` está configurada corretamente
+2. Confirme que o serviço PostgreSQL no Aiven está ativo (status: RUNNING)
+3. Teste a conexão usando o endpoint `/health`
 
 ## Licença
 
