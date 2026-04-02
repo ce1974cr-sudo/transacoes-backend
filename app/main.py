@@ -49,6 +49,11 @@ def get_transacoes(
     numero: Optional[int] = Query(None),
     area_minima: Optional[float] = Query(None),
     area_maxima: Optional[float] = Query(None),
+
+    # 🔥 NOVOS FILTROS
+    valor_min: Optional[float] = Query(None),
+    valor_max: Optional[float] = Query(None),
+
     limit: int = Query(10, le=10000)
 ):
     try:
@@ -74,9 +79,18 @@ def get_transacoes(
             where_clauses.append("area_construida <= %s")
             params.append(area_maxima)
 
+        # 🔥 FILTRO DE VALOR
+        if valor_min is not None:
+            where_clauses.append("valor_transacao >= %s")
+            params.append(valor_min)
+
+        if valor_max is not None:
+            where_clauses.append("valor_transacao <= %s")
+            params.append(valor_max)
+
         where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
-        # 🔹 QUERY PRINCIPAL (dados reais)
+        # 🔹 QUERY PRINCIPAL
         query = f"""
             SELECT 
                 id,
@@ -98,7 +112,7 @@ def get_transacoes(
         cursor.execute(query, params)
         transacoes = cursor.fetchall()
 
-        # 🔹 Lista completa (tabela)
+        # 🔹 LISTA PARA TABELA
         transacoes_list = []
         for t in transacoes:
             transacoes_list.append({
@@ -113,7 +127,7 @@ def get_transacoes(
                 "area_construida": convert_decimal(t["area_construida"])
             })
 
-        # 🔹 DADOS DO GRÁFICO (SEM AGREGAÇÃO)
+        # 🔹 DADOS DO GRÁFICO (valores reais)
         grafico_list = []
         for t in transacoes:
             grafico_list.append({
@@ -121,7 +135,7 @@ def get_transacoes(
                 "valor": convert_decimal(t["valor_transacao"])
             })
 
-        # 🔹 TOTAL
+        # 🔹 TOTAL (sem limit)
         query_count = f"""
             SELECT COUNT(*) as total
             FROM transacoes_imobiliarias
