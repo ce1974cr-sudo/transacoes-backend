@@ -46,27 +46,29 @@ def normalize_contribuinte(numero: str) -> str:
     Converte número de transações para formato IPTU.
     
     Exemplo:
-    - Entrada: 10155402756 (11 dígitos)
+    - Entrada: 10155402756 (11 dígitos, formato transações)
     - Saída: 1015540275-6 (formato IPTU com hífen)
     
     Algoritmo:
-    1. Remove espaços e hífens
-    2. Pega os primeiros 10 dígitos
-    3. Adiciona hífen antes do último dígito
+    1. Remove espaços, hífens e caracteres especiais
+    2. Se tem 11 dígitos: pega os primeiros 10 e adiciona hífen antes do último
+    3. Se já tem hífen: retorna como está
+    4. Se tem 10 dígitos: retorna como está
     """
     # Remove espaços, hífens e caracteres especiais
     numero_limpo = numero.strip().replace('-', '').replace(' ', '')
     
     # Se tem 11 dígitos (formato transações), converte para formato IPTU
     if len(numero_limpo) == 11:
+        # Pega os primeiros 10 dígitos e adiciona hífen antes do último
         return f"{numero_limpo[:10]}-{numero_limpo[10]}"
     
-    # Se já tem hífen, retorna como está
-    if '-' in numero:
+    # Se tem 10 dígitos, retorna como está (pode já estar no formato correto)
+    if len(numero_limpo) == 10:
         return numero_limpo
     
-    # Se tem 10 dígitos, assume que é sem o verificador
-    if len(numero_limpo) == 10:
+    # Se tem hífen, retorna como está
+    if '-' in numero:
         return numero_limpo
     
     return numero_limpo
@@ -213,7 +215,7 @@ def health_check():
         return {"status": "unhealthy", "error": str(e)}
 
 # ============================================================================
-# ENDPOINTS IPTU - NOVOS COM NORMALIZAÇÃO
+# ENDPOINTS IPTU - NOVOS COM NORMALIZAÇÃO CORRIGIDA
 # ============================================================================
 
 @app.get("/api/iptu/contribuinte/{numero_contribuinte}")
@@ -293,11 +295,14 @@ def get_iptu_by_cep(cep: str):
     """
     Busca todos os IPTUs para um determinado CEP.
     
-    Exemplo: GET /api/iptu/cep/5516000
+    Exemplo: GET /api/iptu/cep/05516000
     """
     try:
         conn = get_iptu_connection()
         cursor = conn.cursor()
+        
+        # Normalizar CEP (remover hífen)
+        cep_normalizado = cep.replace('-', '').replace(' ', '')
         
         query = """
             SELECT 
@@ -317,7 +322,7 @@ def get_iptu_by_cep(cep: str):
             LIMIT 100
         """
         
-        cursor.execute(query, (cep,))
+        cursor.execute(query, (cep_normalizado,))
         results = cursor.fetchall()
         cursor.close()
         conn.close()
