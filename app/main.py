@@ -23,11 +23,23 @@ DATABASE_URL = os.getenv(
     "postgres://avnadmin:AVNS_Bj2e6D_lxvVvyiApBgX@pg-b7344e5-ce1974cr-bedd.g.aivencloud.com:16026/defaultdb?sslmode=require"
 )
 
+# URL do banco IPTU (pode ser o mesmo ou diferente)
+IPTU_DATABASE_URL = os.getenv(
+    "IPTU_DATABASE_URL",
+    "postgres://avnadmin:AVNS_72ZIBi1YH8t92IbtwnU@pg-3e9230a6-kalcaterra-04c1.d.aivencloud.com:15805/defaultdb?sslmode=require"
+)
+
 def get_db_connection():
     try:
         return psycopg2.connect(DATABASE_URL)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao conectar ao banco: {str(e)}")
+
+def get_iptu_connection():
+    try:
+        return psycopg2.connect(IPTU_DATABASE_URL)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao conectar ao banco IPTU: {str(e)}")
 
 def convert_decimal(obj):
     if isinstance(obj, Decimal):
@@ -169,3 +181,206 @@ def health_check():
         return {"status": "healthy"}
     except Exception as e:
         return {"status": "unhealthy", "error": str(e)}
+
+# ============================================================================
+# ENDPOINTS IPTU - NOVOS
+# ============================================================================
+
+@app.get("/api/iptu/contribuinte/{numero_contribuinte}")
+def get_iptu_by_contribuinte(numero_contribuinte: str):
+    """
+    Busca dados do IPTU por número de contribuinte.
+    
+    Exemplo: GET /api/iptu/contribuinte/10155402756
+    """
+    try:
+        conn = get_iptu_connection()
+        cursor = conn.cursor()
+        
+        # Normalizar numero_contribuinte (remover formatação)
+        numero_normalizado = numero_contribuinte.strip()
+        
+        # Query para buscar IPTU
+        query = """
+            SELECT 
+                numero_contribuinte,
+                nome_logradouro,
+                numero_imovel,
+                cep_imovel,
+                bairro_imovel,
+                area_construida,
+                valor_m2_terreno,
+                valor_m2_construcao,
+                tipo_uso_imovel,
+                ano_construcao
+            FROM iptu_2026
+            WHERE numero_contribuinte = %s
+            LIMIT 1
+        """
+        
+        cursor.execute(query, (numero_normalizado,))
+        result = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if not result:
+            raise HTTPException(
+                status_code=404,
+                detail=f"IPTU não encontrado para contribuinte: {numero_contribuinte}"
+            )
+        
+        # Converter resultado para dicionário
+        iptu_data = {
+            "numero_contribuinte": result[0],
+            "nome_logradouro": result[1],
+            "numero_imovel": result[2],
+            "cep_imovel": result[3],
+            "bairro_imovel": result[4],
+            "area_construida": float(result[5]) if result[5] else None,
+            "valor_m2_terreno": float(result[6]) if result[6] else None,
+            "valor_m2_construcao": float(result[7]) if result[7] else None,
+            "tipo_uso_imovel": result[8],
+            "ano_construcao": result[9]
+        }
+        
+        return iptu_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao buscar IPTU: {str(e)}"
+        )
+
+
+@app.get("/api/iptu/cep/{cep}")
+def get_iptu_by_cep(cep: str):
+    """
+    Busca todos os IPTUs para um determinado CEP.
+    
+    Exemplo: GET /api/iptu/cep/5516000
+    """
+    try:
+        conn = get_iptu_connection()
+        cursor = conn.cursor()
+        
+        query = """
+            SELECT 
+                numero_contribuinte,
+                nome_logradouro,
+                numero_imovel,
+                cep_imovel,
+                bairro_imovel,
+                area_construida,
+                valor_m2_terreno,
+                valor_m2_construcao,
+                tipo_uso_imovel,
+                ano_construcao
+            FROM iptu_2026
+            WHERE cep_imovel = %s
+            ORDER BY nome_logradouro, numero_imovel
+            LIMIT 100
+        """
+        
+        cursor.execute(query, (cep,))
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        if not results:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Nenhum IPTU encontrado para CEP: {cep}"
+            )
+        
+        iptu_list = []
+        for row in results:
+            iptu_list.append({
+                "numero_contribuinte": row[0],
+                "nome_logradouro": row[1],
+                "numero_imovel": row[2],
+                "cep_imovel": row[3],
+                "bairro_imovel": row[4],
+                "area_construida": float(row[5]) if row[5] else None,
+                "valor_m2_terreno": float(row[6]) if row[6] else None,
+                "valor_m2_construcao": float(row[7]) if row[7] else None,
+                "tipo_uso_imovel": row[8],
+                "ano_construcao": row[9]
+            })
+        
+        return iptu_list
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao buscar IPTU por CEP: {str(e)}"
+        )
+
+
+@app.get("/api/iptu/bairro/{bairro}")
+def get_iptu_by_bairro(bairro: str):
+    """
+    Busca todos os IPTUs para um determinado bairro.
+    
+    Exemplo: GET /api/iptu/bairro/SANTA%20EFIGENIA
+    """
+    try:
+        conn = get_iptu_connection()
+        cursor = conn.cursor()
+        
+        query = """
+            SELECT 
+                numero_contribuinte,
+                nome_logradouro,
+                numero_imovel,
+                cep_imovel,
+                bairro_imovel,
+                area_construida,
+                valor_m2_terreno,
+                valor_m2_construcao,
+                tipo_uso_imovel,
+                ano_construcao
+            FROM iptu_2026
+            WHERE UPPER(bairro_imovel) LIKE UPPER(%s)
+            ORDER BY nome_logradouro
+            LIMIT 100
+        """
+        
+        cursor.execute(query, (f"%{bairro}%",))
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        if not results:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Nenhum IPTU encontrado para bairro: {bairro}"
+            )
+        
+        iptu_list = []
+        for row in results:
+            iptu_list.append({
+                "numero_contribuinte": row[0],
+                "nome_logradouro": row[1],
+                "numero_imovel": row[2],
+                "cep_imovel": row[3],
+                "bairro_imovel": row[4],
+                "area_construida": float(row[5]) if row[5] else None,
+                "valor_m2_terreno": float(row[6]) if row[6] else None,
+                "valor_m2_construcao": float(row[7]) if row[7] else None,
+                "tipo_uso_imovel": row[8],
+                "ano_construcao": row[9]
+            })
+        
+        return iptu_list
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao buscar IPTU por bairro: {str(e)}"
+        )
