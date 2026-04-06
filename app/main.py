@@ -23,10 +23,10 @@ DATABASE_URL = os.getenv(
     "postgres://avnadmin:AVNS_Bj2e6D_lxvVvyiApBgX@pg-b7344e5-ce1974cr-bedd.g.aivencloud.com:16026/defaultdb?sslmode=require"
 )
 
-# URL do banco IPTU (pode ser o mesmo ou diferente)
+# URL do banco IPTU (NOVA - com dados filtrados)
 IPTU_DATABASE_URL = os.getenv(
     "IPTU_DATABASE_URL",
-    "postgres://avnadmin:AVNS_72ZIBi1YH8t92IbtwnU@pg-3e9230a6-kalcaterra-04c1.d.aivencloud.com:15805/defaultdb?sslmode=require"
+    "postgres://avnadmin:AVNS_OZCL90XDQn0uXwHTnbV@pg-210ec680-kalcaterra-04c1.d.aivencloud.com:15805/defaultdb?sslmode=require"
 )
 
 def get_db_connection():
@@ -93,11 +93,8 @@ def get_transacoes(
     numero: Optional[int] = Query(None),
     area_minima: Optional[float] = Query(None),
     area_maxima: Optional[float] = Query(None),
-
-    # 🔥 NOVOS FILTROS
     valor_min: Optional[float] = Query(None),
     valor_max: Optional[float] = Query(None),
-
     limit: int = Query(10, le=10000)
 ):
     try:
@@ -123,7 +120,6 @@ def get_transacoes(
             where_clauses.append("area_construida <= %s")
             params.append(area_maxima)
 
-        # 🔥 FILTRO DE VALOR
         if valor_min is not None:
             where_clauses.append("valor_transacao >= %s")
             params.append(valor_min)
@@ -134,195 +130,148 @@ def get_transacoes(
 
         where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
-        # 🔹 QUERY PRINCIPAL
         query = f"""
-            SELECT 
-                id,
-                cadastro_sql,
-                nome_logradouro,
-                numero,
-                complemento,
-                cep,
-                valor_transacao,
-                data_transacao,
-                area_construida
-            FROM transacoes_imobiliarias
-            WHERE {where_sql}
-            ORDER BY data_transacao DESC
-            LIMIT %s
+        SELECT 
+            id,
+            cadastro_sql,
+            nome_logradouro,
+            numero,
+            complemento,
+            cep,
+            valor_transacao,
+            area_construida,
+            data_transacao,
+            tipo_imovel,
+            valor_m2
+        FROM transacoes
+        WHERE {where_sql}
+        ORDER BY data_transacao DESC
+        LIMIT %s
         """
-
+        
         params.append(limit)
         cursor.execute(query, params)
-        transacoes = cursor.fetchall()
-
-        # 🔹 LISTA PARA TABELA
-        transacoes_list = []
-        for t in transacoes:
-            transacoes_list.append({
-                "id": t["id"],
-                "cadastro_sql": t["cadastro_sql"],
-                "nome_logradouro": t["nome_logradouro"],
-                "numero": t["numero"],
-                "complemento": t["complemento"],
-                "cep": t["cep"],
-                "valor_transacao": convert_decimal(t["valor_transacao"]),
-                "data_transacao": convert_decimal(t["data_transacao"]),
-                "area_construida": convert_decimal(t["area_construida"])
-            })
-
-        # 🔹 DADOS DO GRÁFICO (valores reais)
-        grafico_list = []
-        for t in transacoes:
-            grafico_list.append({
-                "data": convert_decimal(t["data_transacao"]),
-                "valor": convert_decimal(t["valor_transacao"])
-            })
-
-        # 🔹 TOTAL (sem limit)
-        query_count = f"""
-            SELECT COUNT(*) as total
-            FROM transacoes_imobiliarias
-            WHERE {where_sql}
-        """
-
-        cursor.execute(query_count, params[:-1])
-        total = cursor.fetchone()["total"]
-
+        results = cursor.fetchall()
         cursor.close()
         conn.close()
 
         return {
-            "transacoes": transacoes_list,
-            "grafico": grafico_list,
-            "total": total,
+            "transacoes": [dict(row) for row in results],
+            "total": len(results),
             "limite_aplicado": limit
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao buscar transações: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao buscar transações: {str(e)}"
+        )
+
+@app.get("/stats")
+def get_stats():
+    """
+    Retorna estatísticas gerais do banco de dados
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        query = """
+        SELECT 
+            COUNT(*) as total_transacoes,
+            MIN(data_transacao) as data_minima,
+            MAX(data_transacao) as data_maxima,
+            AVG(valor_transacao) as valor_medio,
+            MIN(valor_transacao) as valor_minimo,
+            MAX(valor_transacao) as valor_maximo,
+            AVG(area_construida) as area_media,
+            MIN(area_construida) as area_minima,
+            MAX(area_construida) as area_maxima
+        FROM transacoes
+        """
+
+        cursor.execute(query)
+        result = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        return {
+            "total_transacoes": result[0],
+            "periodo": {
+                "data_minima": str(result[1]) if result[1] else None,
+                "data_maxima": str(result[2]) if result[2] else None
+            },
+            "valores": {
+                "medio": float(result[3]) if result[3] else None,
+                "minimo": float(result[4]) if result[4] else None,
+                "maximo": float(result[5]) if result[5] else None
+            },
+            "areas": {
+                "media": float(result[6]) if result[6] else None,
+                "minima": float(result[7]) if result[7] else None,
+                "maxima": float(result[8]) if result[8] else None
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao buscar estatísticas: {str(e)}"
+        )
 
 @app.get("/health")
 def health_check():
+    """
+    Health check do serviço
+    """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT 1")
         cursor.close()
         conn.close()
+        
         return {"status": "healthy"}
     except Exception as e:
-        return {"status": "unhealthy", "error": str(e)}
-
-# ============================================================================
-# ENDPOINTS IPTU - NOVOS COM NORMALIZAÇÃO CORRIGIDA
-# ============================================================================
-
-@app.get("/api/iptu/contribuinte/{numero_contribuinte}")
-def get_iptu_by_contribuinte(numero_contribuinte: str):
-    """
-    Busca dados do IPTU por número de contribuinte.
-    
-    Aceita formatos:
-    - 10155402756 (11 dígitos, formato transações)
-    - 1015540275-6 (formato IPTU com hífen)
-    
-    Exemplo: GET /api/iptu/contribuinte/10155402756
-    """
-    try:
-        conn = get_iptu_connection()
-        cursor = conn.cursor()
-        
-        # Normalizar numero_contribuinte
-        numero_normalizado = normalize_contribuinte(numero_contribuinte)
-        
-        # Query para buscar IPTU
-        query = """
-            SELECT 
-                numero_contribuinte,
-                nome_logradouro,
-                numero_imovel,
-                cep_imovel,
-                bairro_imovel,
-                area_construida,
-                valor_m2_terreno,
-                valor_m2_construcao,
-                tipo_uso_imovel,
-                ano_construcao
-            FROM iptu_2026
-            WHERE numero_contribuinte = %s
-            LIMIT 1
-        """
-        
-        cursor.execute(query, (numero_normalizado,))
-        result = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        
-        if not result:
-            raise HTTPException(
-                status_code=404,
-                detail=f"IPTU não encontrado para contribuinte: {numero_contribuinte} (normalizado: {numero_normalizado})"
-            )
-        
-        # Converter resultado para dicionário
-        iptu_data = {
-            "numero_contribuinte": result[0],
-            "nome_logradouro": result[1],
-            "numero_imovel": result[2],
-            "cep_imovel": result[3],
-            "bairro_imovel": result[4],
-            "area_construida": float(result[5]) if result[5] else None,
-            "valor_m2_terreno": float(result[6]) if result[6] else None,
-            "valor_m2_construcao": float(result[7]) if result[7] else None,
-            "tipo_uso_imovel": result[8],
-            "ano_construcao": result[9]
-        }
-        
-        return iptu_data
-        
-    except HTTPException:
-        raise
-    except Exception as e:
         raise HTTPException(
-            status_code=500,
-            detail=f"Erro ao buscar IPTU: {str(e)}"
+            status_code=503,
+            detail=f"Serviço indisponível: {str(e)}"
         )
-
 
 @app.get("/api/iptu/cep/{cep}")
 def get_iptu_by_cep(cep: str):
     """
     Busca todos os IPTUs para um determinado CEP.
     
-    Exemplo: GET /api/iptu/cep/05516000
+    Exemplo: GET /api/iptu/cep/01310100
     """
     try:
         conn = get_iptu_connection()
         cursor = conn.cursor()
         
-        # Normalizar CEP (remover hífen)
-        cep_normalizado = cep.replace('-', '').replace(' ', '')
-        
         query = """
-            SELECT 
-                numero_contribuinte,
-                nome_logradouro,
-                numero_imovel,
-                cep_imovel,
-                bairro_imovel,
-                area_construida,
-                valor_m2_terreno,
-                valor_m2_construcao,
-                tipo_uso_imovel,
-                ano_construcao
-            FROM iptu_2026
-            WHERE cep_imovel = %s
-            ORDER BY nome_logradouro, numero_imovel
-            LIMIT 100
+        SELECT 
+            numero_contribuinte,
+            nome_logradouro,
+            numero_imovel,
+            cep_imovel,
+            bairro_imovel,
+            area_construida,
+            valor_m2_terreno,
+            valor_m2_construcao,
+            tipo_uso_imovel,
+            ano_construcao
+        FROM iptu_2026
+        WHERE cep_imovel = %s
+        ORDER BY nome_logradouro
+        LIMIT 100
         """
         
-        cursor.execute(query, (cep_normalizado,))
+        cursor.execute(query, (cep,))
         results = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -358,7 +307,6 @@ def get_iptu_by_cep(cep: str):
             detail=f"Erro ao buscar IPTU por CEP: {str(e)}"
         )
 
-
 @app.get("/api/iptu/bairro/{bairro}")
 def get_iptu_by_bairro(bairro: str):
     """
@@ -371,21 +319,21 @@ def get_iptu_by_bairro(bairro: str):
         cursor = conn.cursor()
         
         query = """
-            SELECT 
-                numero_contribuinte,
-                nome_logradouro,
-                numero_imovel,
-                cep_imovel,
-                bairro_imovel,
-                area_construida,
-                valor_m2_terreno,
-                valor_m2_construcao,
-                tipo_uso_imovel,
-                ano_construcao
-            FROM iptu_2026
-            WHERE UPPER(bairro_imovel) LIKE UPPER(%s)
-            ORDER BY nome_logradouro
-            LIMIT 100
+        SELECT 
+            numero_contribuinte,
+            nome_logradouro,
+            numero_imovel,
+            cep_imovel,
+            bairro_imovel,
+            area_construida,
+            valor_m2_terreno,
+            valor_m2_construcao,
+            tipo_uso_imovel,
+            ano_construcao
+        FROM iptu_2026
+        WHERE UPPER(bairro_imovel) LIKE UPPER(%s)
+        ORDER BY nome_logradouro
+        LIMIT 100
         """
         
         cursor.execute(query, (f"%{bairro}%",))
