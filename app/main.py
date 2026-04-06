@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
@@ -23,10 +24,10 @@ DATABASE_URL = os.getenv(
     "postgres://avnadmin:AVNS_Bj2e6D_lxvVvyiApBgX@pg-b7344e5-ce1974cr-bedd.g.aivencloud.com:16026/defaultdb?sslmode=require"
 )
 
-# URL do banco IPTU (pode ser o mesmo ou diferente)
+# URL do banco IPTU (ATUALIZADO - novo banco com dados filtrados)
 IPTU_DATABASE_URL = os.getenv(
     "IPTU_DATABASE_URL",
-    "postgres://avnadmin:AVNS_72ZIBi1YH8t92IbtwnU@pg-3e9230a6-kalcaterra-04c1.d.aivencloud.com:15805/defaultdb?sslmode=require"
+    "postgres://avnadmin:AVNS_OZCL90XDQn0uXwHTnbV@pg-210ec680-kalcaterra-04c1.d.aivencloud.com:15805/defaultdb?sslmode=require"
 )
 
 def get_db_connection():
