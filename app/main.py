@@ -41,6 +41,36 @@ def get_iptu_connection():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao conectar ao banco IPTU: {str(e)}")
 
+def normalize_contribuinte(numero: str) -> str:
+    """
+    Converte número de transações para formato IPTU.
+    
+    Exemplo:
+    - Entrada: 10155402756 (11 dígitos)
+    - Saída: 1015540275-6 (formato IPTU com hífen)
+    
+    Algoritmo:
+    1. Remove espaços e hífens
+    2. Pega os primeiros 10 dígitos
+    3. Adiciona hífen antes do último dígito
+    """
+    # Remove espaços, hífens e caracteres especiais
+    numero_limpo = numero.strip().replace('-', '').replace(' ', '')
+    
+    # Se tem 11 dígitos (formato transações), converte para formato IPTU
+    if len(numero_limpo) == 11:
+        return f"{numero_limpo[:10]}-{numero_limpo[10]}"
+    
+    # Se já tem hífen, retorna como está
+    if '-' in numero:
+        return numero_limpo
+    
+    # Se tem 10 dígitos, assume que é sem o verificador
+    if len(numero_limpo) == 10:
+        return numero_limpo
+    
+    return numero_limpo
+
 def convert_decimal(obj):
     if isinstance(obj, Decimal):
         return float(obj)
@@ -183,7 +213,7 @@ def health_check():
         return {"status": "unhealthy", "error": str(e)}
 
 # ============================================================================
-# ENDPOINTS IPTU - NOVOS
+# ENDPOINTS IPTU - NOVOS COM NORMALIZAÇÃO
 # ============================================================================
 
 @app.get("/api/iptu/contribuinte/{numero_contribuinte}")
@@ -191,14 +221,18 @@ def get_iptu_by_contribuinte(numero_contribuinte: str):
     """
     Busca dados do IPTU por número de contribuinte.
     
+    Aceita formatos:
+    - 10155402756 (11 dígitos, formato transações)
+    - 1015540275-6 (formato IPTU com hífen)
+    
     Exemplo: GET /api/iptu/contribuinte/10155402756
     """
     try:
         conn = get_iptu_connection()
         cursor = conn.cursor()
         
-        # Normalizar numero_contribuinte (remover formatação)
-        numero_normalizado = numero_contribuinte.strip()
+        # Normalizar numero_contribuinte
+        numero_normalizado = normalize_contribuinte(numero_contribuinte)
         
         # Query para buscar IPTU
         query = """
@@ -226,7 +260,7 @@ def get_iptu_by_contribuinte(numero_contribuinte: str):
         if not result:
             raise HTTPException(
                 status_code=404,
-                detail=f"IPTU não encontrado para contribuinte: {numero_contribuinte}"
+                detail=f"IPTU não encontrado para contribuinte: {numero_contribuinte} (normalizado: {numero_normalizado})"
             )
         
         # Converter resultado para dicionário
