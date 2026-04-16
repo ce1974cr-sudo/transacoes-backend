@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
@@ -357,6 +356,144 @@ def get_iptu_by_cep(cep: str):
         raise HTTPException(
             status_code=500,
             detail=f"Erro ao buscar IPTU por CEP: {str(e)}"
+        )
+
+
+@app.get("/api/iptu/cep-parcial/{cep}")
+def get_iptu_by_cep_parcial(cep: str):
+    """
+    Busca todos os IPTUs para um CEP parcial.
+    Permite buscar por parte do CEP (ex: "05516" retorna todos os CEPs que começam com isso).
+    
+    Exemplo: GET /api/iptu/cep-parcial/05516
+    """
+    try:
+        conn = get_iptu_connection()
+        cursor = conn.cursor()
+        
+        # Normalizar CEP (remover hífen)
+        cep_normalizado = cep.replace('-', '').replace(' ', '')
+        
+        query = """
+            SELECT 
+                numero_contribuinte,
+                nome_logradouro,
+                numero_imovel,
+                cep_imovel,
+                bairro_imovel,
+                area_construida,
+                valor_m2_terreno,
+                valor_m2_construcao,
+                tipo_uso_imovel,
+                ano_construcao
+            FROM iptu_2026
+            WHERE cep_imovel LIKE %s
+            ORDER BY cep_imovel, nome_logradouro, numero_imovel
+            LIMIT 100
+        """
+        
+        cursor.execute(query, (f"{cep_normalizado}%",))
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        if not results:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Nenhum IPTU encontrado para CEP parcial: {cep}"
+            )
+        
+        iptu_list = []
+        for row in results:
+            iptu_list.append({
+                "numero_contribuinte": row[0],
+                "nome_logradouro": row[1],
+                "numero_imovel": row[2],
+                "cep_imovel": row[3],
+                "bairro_imovel": row[4],
+                "area_construida": float(row[5]) if row[5] else None,
+                "valor_m2_terreno": float(row[6]) if row[6] else None,
+                "valor_m2_construcao": float(row[7]) if row[7] else None,
+                "tipo_uso_imovel": row[8],
+                "ano_construcao": row[9]
+            })
+        
+        return iptu_list
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao buscar IPTU por CEP parcial: {str(e)}"
+        )
+
+
+@app.get("/api/iptu/endereco/{endereco}")
+def get_iptu_by_endereco(endereco: str):
+    """
+    Busca todos os IPTUs para um determinado endereço (logradouro).
+    Permite busca parcial - não precisa digitar o nome completo da rua.
+    
+    Exemplo: GET /api/iptu/endereco/Paulista
+    Retorna: Avenida Paulista, Rua Paulista, etc.
+    """
+    try:
+        conn = get_iptu_connection()
+        cursor = conn.cursor()
+        
+        query = """
+            SELECT 
+                numero_contribuinte,
+                nome_logradouro,
+                numero_imovel,
+                cep_imovel,
+                bairro_imovel,
+                area_construida,
+                valor_m2_terreno,
+                valor_m2_construcao,
+                tipo_uso_imovel,
+                ano_construcao
+            FROM iptu_2026
+            WHERE UPPER(nome_logradouro) LIKE UPPER(%s)
+            ORDER BY nome_logradouro, numero_imovel
+            LIMIT 100
+        """
+        
+        cursor.execute(query, (f"%{endereco}%",))
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        if not results:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Nenhum IPTU encontrado para endereço: {endereco}"
+            )
+        
+        iptu_list = []
+        for row in results:
+            iptu_list.append({
+                "numero_contribuinte": row[0],
+                "nome_logradouro": row[1],
+                "numero_imovel": row[2],
+                "cep_imovel": row[3],
+                "bairro_imovel": row[4],
+                "area_construida": float(row[5]) if row[5] else None,
+                "valor_m2_terreno": float(row[6]) if row[6] else None,
+                "valor_m2_construcao": float(row[7]) if row[7] else None,
+                "tipo_uso_imovel": row[8],
+                "ano_construcao": row[9]
+            })
+        
+        return iptu_list
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao buscar IPTU por endereço: {str(e)}"
         )
 
 
