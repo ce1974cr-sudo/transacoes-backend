@@ -92,14 +92,13 @@ def read_root():
 def get_transacoes(
     cadastro_sql: Optional[str] = Query(None),
     numero: Optional[int] = Query(None),
+    endereco: Optional[str] = Query(None),
+    cep: Optional[str] = Query(None),
     area_minima: Optional[float] = Query(None),
     area_maxima: Optional[float] = Query(None),
-
-    # 🔥 NOVOS FILTROS
     valor_min: Optional[float] = Query(None),
     valor_max: Optional[float] = Query(None),
-
-    limit: int = Query(10, le=10000)
+    limit: int = Query(50, le=10000)
 ):
     try:
         conn = get_db_connection()
@@ -115,6 +114,14 @@ def get_transacoes(
         if numero is not None:
             where_clauses.append("numero = %s")
             params.append(numero)
+
+        if endereco:
+            where_clauses.append("nome_logradouro ILIKE %s")
+            params.append(f"%{endereco}%")
+
+        if cep:
+            where_clauses.append("cep = %s")
+            params.append(cep)
 
         if area_minima is not None:
             where_clauses.append("area_construida >= %s")
