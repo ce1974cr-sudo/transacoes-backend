@@ -134,9 +134,9 @@ def get_transacoes(
             where_clauses.append("cadastro_sql LIKE %s")
             params.append(f"%{cadastro_sql}%")
 
-        # 🔹 NÚMERO (busca exata, APENAS se preenchido)
-        # ✅ IMPORTANTE: Só adiciona se numero foi explicitamente passado
-        if numero is not None and numero != 0:
+        # 🔹 NÚMERO (busca exata, APENAS se foi explicitamente passado E é maior que 0)
+        # ✅ IMPORTANTE: Ignora completamente se for 0, None ou não foi passado
+        if numero and numero > 0:
             where_clauses.append("numero = %s")
             params.append(numero)
 
