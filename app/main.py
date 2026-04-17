@@ -1,4 +1,5 @@
 
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
@@ -107,35 +108,42 @@ def get_transacoes(
         where_clauses = []
         params = []
 
+        # 🔹 CADASTRO SQL (busca parcial)
         if cadastro_sql:
             where_clauses.append("cadastro_sql LIKE %s")
             params.append(f"%{cadastro_sql}%")
 
+        # 🔹 NÚMERO (busca exata, opcional)
         if numero is not None:
             where_clauses.append("numero = %s")
             params.append(numero)
 
+        # 🔹 ENDEREÇO (busca parcial, case-insensitive)
         if endereco:
             where_clauses.append("nome_logradouro ILIKE %s")
             params.append(f"%{endereco}%")
 
+        # 🔹 CEP (busca exata, como TEXTO - preserva zeros à esquerda)
         if cep:
             where_clauses.append("cep = %s")
-            params.append(cep)
+            params.append(str(cep))  # ✅ GARANTE QUE SEJA TEXTO
 
+        # 🔹 ÁREA MÍNIMA
         if area_minima is not None:
             where_clauses.append("area_construida >= %s")
             params.append(area_minima)
 
+        # 🔹 ÁREA MÁXIMA
         if area_maxima is not None:
             where_clauses.append("area_construida <= %s")
             params.append(area_maxima)
 
-        # 🔥 FILTRO DE VALOR
+        # 🔹 VALOR MÍNIMO
         if valor_min is not None:
             where_clauses.append("valor_transacao >= %s")
             params.append(valor_min)
 
+        # 🔹 VALOR MÁXIMO
         if valor_max is not None:
             where_clauses.append("valor_transacao <= %s")
             params.append(valor_max)
@@ -341,22 +349,28 @@ def get_iptu_by_cep(cep: str):
                 detail=f"Nenhum IPTU encontrado para CEP: {cep}"
             )
         
+        # Converter resultados para lista de dicionários
         iptu_list = []
-        for row in results:
-            iptu_list.append({
-                "numero_contribuinte": row[0],
-                "nome_logradouro": row[1],
-                "numero_imovel": row[2],
-                "cep_imovel": row[3],
-                "bairro_imovel": row[4],
-                "area_construida": float(row[5]) if row[5] else None,
-                "valor_m2_terreno": float(row[6]) if row[6] else None,
-                "valor_m2_construcao": float(row[7]) if row[7] else None,
-                "tipo_uso_imovel": row[8],
-                "ano_construcao": row[9]
-            })
+        for result in results:
+            iptu_data = {
+                "numero_contribuinte": result[0],
+                "nome_logradouro": result[1],
+                "numero_imovel": result[2],
+                "cep_imovel": result[3],
+                "bairro_imovel": result[4],
+                "area_construida": float(result[5]) if result[5] else None,
+                "valor_m2_terreno": float(result[6]) if result[6] else None,
+                "valor_m2_construcao": float(result[7]) if result[7] else None,
+                "tipo_uso_imovel": result[8],
+                "ano_construcao": result[9]
+            }
+            iptu_list.append(iptu_data)
         
-        return iptu_list
+        return {
+            "cep": cep,
+            "total": len(iptu_list),
+            "imoveis": iptu_list
+        }
         
     except HTTPException:
         raise
@@ -367,12 +381,12 @@ def get_iptu_by_cep(cep: str):
         )
 
 
-@app.get("/api/iptu/bairro/{bairro}")
-def get_iptu_by_bairro(bairro: str):
+@app.get("/api/iptu/endereco/{endereco}")
+def get_iptu_by_endereco(endereco: str):
     """
-    Busca todos os IPTUs para um determinado bairro.
+    Busca todos os IPTUs para um determinado endereço.
     
-    Exemplo: GET /api/iptu/bairro/SANTA%20EFIGENIA
+    Exemplo: GET /api/iptu/endereco/Avenida%20Paulista
     """
     try:
         conn = get_iptu_connection()
@@ -391,12 +405,12 @@ def get_iptu_by_bairro(bairro: str):
                 tipo_uso_imovel,
                 ano_construcao
             FROM iptu_2026
-            WHERE UPPER(bairro_imovel) LIKE UPPER(%s)
-            ORDER BY nome_logradouro
+            WHERE nome_logradouro ILIKE %s
+            ORDER BY numero_imovel
             LIMIT 100
         """
         
-        cursor.execute(query, (f"%{bairro}%",))
+        cursor.execute(query, (f"%{endereco}%",))
         results = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -404,30 +418,36 @@ def get_iptu_by_bairro(bairro: str):
         if not results:
             raise HTTPException(
                 status_code=404,
-                detail=f"Nenhum IPTU encontrado para bairro: {bairro}"
+                detail=f"Nenhum IPTU encontrado para endereço: {endereco}"
             )
         
+        # Converter resultados para lista de dicionários
         iptu_list = []
-        for row in results:
-            iptu_list.append({
-                "numero_contribuinte": row[0],
-                "nome_logradouro": row[1],
-                "numero_imovel": row[2],
-                "cep_imovel": row[3],
-                "bairro_imovel": row[4],
-                "area_construida": float(row[5]) if row[5] else None,
-                "valor_m2_terreno": float(row[6]) if row[6] else None,
-                "valor_m2_construcao": float(row[7]) if row[7] else None,
-                "tipo_uso_imovel": row[8],
-                "ano_construcao": row[9]
-            })
+        for result in results:
+            iptu_data = {
+                "numero_contribuinte": result[0],
+                "nome_logradouro": result[1],
+                "numero_imovel": result[2],
+                "cep_imovel": result[3],
+                "bairro_imovel": result[4],
+                "area_construida": float(result[5]) if result[5] else None,
+                "valor_m2_terreno": float(result[6]) if result[6] else None,
+                "valor_m2_construcao": float(result[7]) if result[7] else None,
+                "tipo_uso_imovel": result[8],
+                "ano_construcao": result[9]
+            }
+            iptu_list.append(iptu_data)
         
-        return iptu_list
+        return {
+            "endereco": endereco,
+            "total": len(iptu_list),
+            "imoveis": iptu_list
+        }
         
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Erro ao buscar IPTU por bairro: {str(e)}"
+            detail=f"Erro ao buscar IPTU por endereço: {str(e)}"
         )
