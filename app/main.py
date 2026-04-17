@@ -43,18 +43,17 @@ def get_iptu_connection():
 
 def normalize_cep(cep: str) -> str:
     """
-    Normaliza CEP para formato consistente com o banco de dados.
+    Normaliza CEP removendo caracteres especiais e convertendo para texto.
     
     Processo:
     1. Remove caracteres especiais (hífens, espaços, etc)
-    2. Converte para número (remove zeros à esquerda temporariamente)
-    3. Converte de volta para texto com 8 dígitos (restaura zeros à esquerda)
+    2. Converte para número (remove zeros à esquerda)
+    3. Converte de volta para texto SEM adicionar zeros
     
     Exemplos:
-    - Entrada: "01001901" → Saída: "01001901"
-    - Entrada: "1001901" → Saída: "01001901"
-    - Entrada: "01-001-901" → Saída: "01001901"
-    - Entrada: "05516000" → Saída: "05516000"
+    - Entrada: "01001901" → Saída: "1001901"
+    - Entrada: "05516000" → Saída: "5516000"
+    - Entrada: "01-001-901" → Saída: "1001901"
     """
     if not cep:
         return None
@@ -71,8 +70,8 @@ def normalize_cep(cep: str) -> str:
     except ValueError:
         return None
     
-    # Converte de volta para texto com 8 dígitos (restaura zeros à esquerda)
-    cep_normalizado = str(cep_int).zfill(8)
+    # Converte de volta para texto SEM adicionar zeros
+    cep_normalizado = str(cep_int)
     
     return cep_normalizado
 
@@ -147,7 +146,7 @@ def get_transacoes(
             where_clauses.append("nome_logradouro ILIKE %s")
             params.append(f"%{endereco}%")
 
-        # 🔹 CEP (busca exata, NORMALIZADO)
+        # 🔹 CEP (busca exata, NORMALIZADO - sem adicionar zeros)
         # ✅ NÚMERO É OPCIONAL PARA CEP
         if cep:
             cep_normalizado = normalize_cep(cep)
