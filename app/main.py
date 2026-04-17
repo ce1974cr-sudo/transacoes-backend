@@ -1,5 +1,3 @@
-
-
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
@@ -43,6 +41,41 @@ def get_iptu_connection():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao conectar ao banco IPTU: {str(e)}")
 
+def normalize_cep(cep: str) -> str:
+    """
+    Normaliza CEP para formato consistente com o banco de dados.
+    
+    Processo:
+    1. Remove caracteres especiais (hífens, espaços, etc)
+    2. Converte para número (remove zeros à esquerda temporariamente)
+    3. Converte de volta para texto com 8 dígitos (restaura zeros à esquerda)
+    
+    Exemplos:
+    - Entrada: "01001901" → Saída: "01001901"
+    - Entrada: "1001901" → Saída: "01001901"
+    - Entrada: "01-001-901" → Saída: "01001901"
+    - Entrada: "05516000" → Saída: "05516000"
+    """
+    if not cep:
+        return None
+    
+    # Remove espaços, hífens e outros caracteres especiais
+    cep_limpo = cep.strip().replace('-', '').replace(' ', '').replace('.', '')
+    
+    # Remove caracteres não numéricos
+    cep_numerico = ''.join(filter(str.isdigit, cep_limpo))
+    
+    # Converte para número (remove zeros à esquerda)
+    try:
+        cep_int = int(cep_numerico)
+    except ValueError:
+        return None
+    
+    # Converte de volta para texto com 8 dígitos (restaura zeros à esquerda)
+    cep_normalizado = str(cep_int).zfill(8)
+    
+    return cep_normalizado
+
 def normalize_contribuinte(numero: str) -> str:
     """
     Converte número de transações para formato IPTU.
@@ -50,26 +83,15 @@ def normalize_contribuinte(numero: str) -> str:
     Exemplo:
     - Entrada: 10155402756 (11 dígitos, formato transações)
     - Saída: 1015540275-6 (formato IPTU com hífen)
-    
-    Algoritmo:
-    1. Remove espaços, hífens e caracteres especiais
-    2. Se tem 11 dígitos: pega os primeiros 10 e adiciona hífen antes do último
-    3. Se já tem hífen: retorna como está
-    4. Se tem 10 dígitos: retorna como está
     """
-    # Remove espaços, hífens e caracteres especiais
     numero_limpo = numero.strip().replace('-', '').replace(' ', '')
     
-    # Se tem 11 dígitos (formato transações), converte para formato IPTU
     if len(numero_limpo) == 11:
-        # Pega os primeiros 10 dígitos e adiciona hífen antes do último
         return f"{numero_limpo[:10]}-{numero_limpo[10]}"
     
-    # Se tem 10 dígitos, retorna como está (pode já estar no formato correto)
     if len(numero_limpo) == 10:
         return numero_limpo
     
-    # Se tem hífen, retorna como está
     if '-' in numero:
         return numero_limpo
     
@@ -113,20 +135,25 @@ def get_transacoes(
             where_clauses.append("cadastro_sql LIKE %s")
             params.append(f"%{cadastro_sql}%")
 
-        # 🔹 NÚMERO (busca exata, opcional)
-        if numero is not None:
+        # 🔹 NÚMERO (busca exata, APENAS se preenchido)
+        # ✅ IMPORTANTE: Só adiciona se numero foi explicitamente passado
+        if numero is not None and numero != 0:
             where_clauses.append("numero = %s")
             params.append(numero)
 
         # 🔹 ENDEREÇO (busca parcial, case-insensitive)
+        # ✅ NÚMERO É OPCIONAL PARA ENDEREÇO
         if endereco:
             where_clauses.append("nome_logradouro ILIKE %s")
             params.append(f"%{endereco}%")
 
-        # 🔹 CEP (busca exata, como TEXTO - preserva zeros à esquerda)
+        # 🔹 CEP (busca exata, NORMALIZADO)
+        # ✅ NÚMERO É OPCIONAL PARA CEP
         if cep:
-            where_clauses.append("cep = %s")
-            params.append(str(cep))  # ✅ GARANTE QUE SEJA TEXTO
+            cep_normalizado = normalize_cep(cep)
+            if cep_normalizado:
+                where_clauses.append("cep = %s")
+                params.append(cep_normalizado)
 
         # 🔹 ÁREA MÍNIMA
         if area_minima is not None:
@@ -231,7 +258,7 @@ def health_check():
         return {"status": "unhealthy", "error": str(e)}
 
 # ============================================================================
-# ENDPOINTS IPTU - NOVOS COM NORMALIZAÇÃO CORRIGIDA
+# ENDPOINTS IPTU
 # ============================================================================
 
 @app.get("/api/iptu/contribuinte/{numero_contribuinte}")
@@ -242,17 +269,13 @@ def get_iptu_by_contribuinte(numero_contribuinte: str):
     Aceita formatos:
     - 10155402756 (11 dígitos, formato transações)
     - 1015540275-6 (formato IPTU com hífen)
-    
-    Exemplo: GET /api/iptu/contribuinte/10155402756
     """
     try:
         conn = get_iptu_connection()
         cursor = conn.cursor()
         
-        # Normalizar numero_contribuinte
         numero_normalizado = normalize_contribuinte(numero_contribuinte)
         
-        # Query para buscar IPTU
         query = """
             SELECT 
                 numero_contribuinte,
@@ -278,10 +301,9 @@ def get_iptu_by_contribuinte(numero_contribuinte: str):
         if not result:
             raise HTTPException(
                 status_code=404,
-                detail=f"IPTU não encontrado para contribuinte: {numero_contribuinte} (normalizado: {numero_normalizado})"
+                detail=f"IPTU não encontrado para contribuinte: {numero_contribuinte}"
             )
         
-        # Converter resultado para dicionário
         iptu_data = {
             "numero_contribuinte": result[0],
             "nome_logradouro": result[1],
@@ -310,15 +332,18 @@ def get_iptu_by_contribuinte(numero_contribuinte: str):
 def get_iptu_by_cep(cep: str):
     """
     Busca todos os IPTUs para um determinado CEP.
-    
-    Exemplo: GET /api/iptu/cep/05516000
     """
     try:
         conn = get_iptu_connection()
         cursor = conn.cursor()
         
-        # Normalizar CEP (remover hífen)
-        cep_normalizado = cep.replace('-', '').replace(' ', '')
+        cep_normalizado = normalize_cep(cep)
+        
+        if not cep_normalizado:
+            raise HTTPException(
+                status_code=400,
+                detail=f"CEP inválido: {cep}"
+            )
         
         query = """
             SELECT 
@@ -349,7 +374,6 @@ def get_iptu_by_cep(cep: str):
                 detail=f"Nenhum IPTU encontrado para CEP: {cep}"
             )
         
-        # Converter resultados para lista de dicionários
         iptu_list = []
         for result in results:
             iptu_data = {
@@ -367,7 +391,7 @@ def get_iptu_by_cep(cep: str):
             iptu_list.append(iptu_data)
         
         return {
-            "cep": cep,
+            "cep": cep_normalizado,
             "total": len(iptu_list),
             "imoveis": iptu_list
         }
@@ -385,8 +409,6 @@ def get_iptu_by_cep(cep: str):
 def get_iptu_by_endereco(endereco: str):
     """
     Busca todos os IPTUs para um determinado endereço.
-    
-    Exemplo: GET /api/iptu/endereco/Avenida%20Paulista
     """
     try:
         conn = get_iptu_connection()
@@ -421,7 +443,6 @@ def get_iptu_by_endereco(endereco: str):
                 detail=f"Nenhum IPTU encontrado para endereço: {endereco}"
             )
         
-        # Converter resultados para lista de dicionários
         iptu_list = []
         for result in results:
             iptu_data = {
