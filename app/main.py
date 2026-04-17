@@ -134,18 +134,17 @@ def get_transacoes(
             where_clauses.append("cadastro_sql LIKE %s")
             params.append(f"%{cadastro_sql}%")
 
+        # 🔹 NÚMERO (busca exata, APENAS se foi explicitamente passado E é maior que 0)
+        # ✅ IMPORTANTE: Ignora completamente se for 0, None ou não foi passado
+        if numero and numero > 0:
+            where_clauses.append("numero = %s")
+            params.append(numero)
+
         # 🔹 ENDEREÇO (busca parcial, case-insensitive)
-        # ✅ IMPORTANTE: Quando há endereço, IGNORA completamente o filtro de número
+        # ✅ NÚMERO É OPCIONAL PARA ENDEREÇO
         if endereco:
             where_clauses.append("nome_logradouro ILIKE %s")
             params.append(f"%{endereco}%")
-            # ❌ NÃO adiciona número para endereço (sempre opcional, sempre ignorado)
-        else:
-            # 🔹 NÚMERO (busca exata, APENAS se foi explicitamente passado E é maior que 0)
-            # ✅ IMPORTANTE: Só adiciona se numero foi explicitamente passado E é maior que 0
-            if numero and numero > 0:
-                where_clauses.append("numero = %s")
-                params.append(numero)
 
         # 🔹 CEP (busca exata, NORMALIZADO - sem adicionar zeros)
         # ✅ NÚMERO É OPCIONAL PARA CEP
@@ -154,10 +153,6 @@ def get_transacoes(
             if cep_normalizado:
                 where_clauses.append("cep = %s")
                 params.append(cep_normalizado)
-                # ✅ SÓ adiciona número para CEP se foi preenchido
-                if numero and numero > 0:
-                    where_clauses.append("numero = %s")
-                    params.append(numero)
 
         # 🔹 ÁREA MÍNIMA
         if area_minima is not None:
